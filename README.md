@@ -3,7 +3,7 @@ Compress Windows executable file becoming smaller size and able to run. During r
 
 # Compile
 1. Compile the main program using `cargo build -r`
-2. Copy ExeCompress.exe to the same folder with `stub_loader` folder, run the program in the folder
+2. Copy ExeCompress.exe to the same folder level with `stub_loader` folder
 
 # Notes
 1. During run the program will extract icon from input executable into stub_loader folder which also contains stub_loader source code.
