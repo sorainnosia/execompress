@@ -1,6 +1,7 @@
 use clap::Parser;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::{fs, io::Write, path::PathBuf};
+use std::sync::{Arc, Mutex};
 use std::process::Command;
 use xz2::write::XzEncoder;
 use zstd::stream::Encoder;
@@ -9,6 +10,9 @@ use walkdir::WalkDir;
 mod icoextractor;
 mod stub;
 use crate::icoextractor::IconExtractor;
+use rayon::*;
+use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 
 #[derive(Parser)]
 struct Args {
@@ -16,9 +20,9 @@ struct Args {
     #[arg(short, long)]
     input: PathBuf,
 
-	///	Extra path to a directory containing files and directories to pack/unpack together
-	#[arg(short, long)]
-    extra: Option<PathBuf>,
+    /// Extra directory containing files and directories to pack/unpack together
+    #[arg(short, long)]
+    extra_dir: Option<PathBuf>,
 
     /// Output compressed executable
     #[arg(short, long)]
@@ -27,6 +31,10 @@ struct Args {
     /// Compression level: 1-9 (default) 1-22 (--zstd)
     #[arg(short, long, default_value = "3")]
     level: u32,
+
+    /// Amount of thread used to pack binary and extra directory
+    #[arg(short, long, default_value = "4")]
+    parallel: usize,
 
     /// Use zstd instead of lzma
     #[arg(long)]
@@ -89,36 +97,52 @@ fn main() -> std::io::Result<()> {
         out
     };
 	
-	let mut extra_files = vec![];
+	let mut extra_files = Arc::new(Mutex::new(vec![]));
 	
-	
-	if let Some(xtra) = &args.extra {
+	let ef = extra_files.clone();
+	if let Some(xtra) = &args.extra_dir {
 		if xtra.is_dir() {
-			for entry in WalkDir::new(xtra.clone())
-				.into_iter()
-				.filter_map(|e| e.ok())
-				.filter(|e| e.file_type().is_file())
-			{
-				let path = entry.path();
-				let rel_path = path.strip_prefix(&xtra).unwrap().to_string_lossy().replace("\\", "/");
-				let data = fs::read(path)?;
+			//for entry in WalkDir::new(xtra.clone())
+			//	.into_iter()
+			
+			let pool = ThreadPoolBuilder::new()
+                    .num_threads(args.parallel)
+                    .build()
+                    .unwrap();
 
-				let compressed_data = if args.zstd {
-					let mut out = vec![];
-					let mut encoder = Encoder::new(&mut out, args.level as i32)?;
-					encoder.write_all(&data)?;
-					encoder.finish()?;
-					out
-				} else {
-					let mut out = vec![];
-					let mut encoder = XzEncoder::new(&mut out, args.level);
-					encoder.write_all(&data)?;
-					encoder.finish()?;
-					out
-				};
+			pool.install(|| {
+				WalkDir::new(xtra.clone())
+					.into_iter()
+					.filter_map(|e| e.ok())
+					.filter(|e| e.file_type().is_file())
+					.par_bridge()
+					.for_each(|entry| 
+				{
+					let path = entry.path();
+					let rel_path = path.strip_prefix(&xtra).unwrap().to_string_lossy().replace("\\", "/");
+					let data = fs::read(path).unwrap();
 
-				extra_files.push((rel_path, compressed_data));
-			}
+					let compressed_data = if args.zstd {
+						let mut out = vec![];
+						let mut encoder = Encoder::new(&mut out, args.level as i32).unwrap();
+						encoder.write_all(&data).unwrap();
+						encoder.finish().unwrap();
+						out
+					} else {
+						let mut out = vec![];
+						let mut encoder = XzEncoder::new(&mut out, args.level);
+						encoder.write_all(&data).unwrap();
+						encoder.finish().unwrap();
+						out
+					};
+
+					{
+						let ef2 = ef.clone();
+						let list = &mut *ef2.lock().unwrap();
+						list.push((rel_path, compressed_data));
+					}
+				});
+			});
 		}
 	}
 
@@ -144,14 +168,18 @@ fn main() -> std::io::Result<()> {
     stub.extend_from_slice(payload_len_line.as_bytes()); // Write the length as a single line
     stub.extend_from_slice(&compressed_data);     
 
-	for (filename, compressed_data) in extra_files {
-		let encoded_name = STANDARD.encode(&filename);
-		stub.extend_from_slice(b"\n--EXTRA-FILE--\n");
-		stub.extend_from_slice(encoded_name.as_bytes());
-		stub.extend_from_slice(b"\n");
-		let len_line = format!("{}\n", compressed_data.len());
-		stub.extend_from_slice(len_line.as_bytes());
-		stub.extend_from_slice(&compressed_data);
+	let ef3 = ef.clone();
+	{
+		let list = &*ef3.lock().unwrap();
+		for (filename, compressed_data) in list {
+			let encoded_name = STANDARD.encode(&filename);
+			stub.extend_from_slice(b"\n--EXTRA-FILE--\n");
+			stub.extend_from_slice(encoded_name.as_bytes());
+			stub.extend_from_slice(b"\n");
+			let len_line = format!("{}\n", compressed_data.len());
+			stub.extend_from_slice(len_line.as_bytes());
+			stub.extend_from_slice(&compressed_data);
+		}
 	}
 
     fs::write(&args.output, stub)?;
