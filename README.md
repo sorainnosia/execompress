@@ -6,7 +6,7 @@ Options:
   -i, --input <INPUT>    Input executable
   -e, --extra <EXTRA>    Extra path to a directory containing files and directories to pack/unpack together
   -o, --output <OUTPUT>  Output compressed executable
-  -l, --level <LEVEL>    Compression level: 1-9 [default: 3]
+  -l, --level <LEVEL>    Compression level: 1-9 (default) 1-22 (--zstd)
       --zstd             Use zstd instead of lzma
       --gui              When input file is GUI app, suppress command line window
   -h, --help             Print help
