@@ -15,7 +15,7 @@ Compress Windows executable file becoming smaller size and able to run. During r
 ```
 execompress --input "C:\folder\input.exe" --output "output.exe" -l 20 --gui --zstd
 ```
-# Other Example using XzEncoder
+# Example using XzEncoder algorithm
 `--gui` means the input.exe is a GUI app, and it suppress the command line console from being shown. Using `XzEncoder` (default), maximum compression level is `0 to 9`.
 
 ```
