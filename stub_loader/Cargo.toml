@@ -1,0 +1,20 @@
+[package]
+name = "stub_loader"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+xz2 = "0.1"
+zstd = "0.13"
+base64 = "0.22"
+tempfile = "3.8"
+close-file = "0.1.0"
+rand = "0.8"
+
+[build-dependencies]
+winres = "0.1"
+
+[features]
+default = []
+gui = []
