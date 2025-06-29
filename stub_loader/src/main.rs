@@ -15,6 +15,8 @@ use fs_more::directory::{move_directory, DirectoryMoveOptions, DestinationDirect
 use fs_more::file::remove_file;
 use std::io;
 use std::fs;
+use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 
 pub fn delete_all_files_in_folder(dir_path: &Path) -> io::Result<()> {
     for entry in fs::read_dir(dir_path.clone())? {
@@ -116,30 +118,38 @@ fn main() {
         .unwrap_or_else(|| ".".into());
     file.close();
 	
-    for start in extra_starts {
-        if let Some(path_len_pos) = buffer[start..].iter().position(|&b| b == b'\n') {
-            let path_str = String::from_utf8_lossy(&buffer[start..start + path_len_pos]).to_string();
-			let mut full_path = path_dir.clone();
-			if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(path_str) {
-                full_path = path_dir.join(String::from_utf8_lossy(&decoded).to_string());
-            }
+	//for start in extra_starts {
+	let pool = ThreadPoolBuilder::new()
+				.num_threads(4)
+				.build()
+				.unwrap();
 
-            let content_start = start + path_len_pos + 1;
-            if let Some(len_end) = buffer[content_start..].iter().position(|&b| b == b'\n') {
-                let len_str = String::from_utf8_lossy(&buffer[content_start..content_start + len_end]);
-                if let Ok(payload_len) = len_str.trim().parse::<usize>() {
-                    let bin_start = content_start + len_end + 1;
-                    let compressed = &buffer[bin_start..bin_start + payload_len];
-                    let content = decompress(compressed);
-                    if let Some(parent) = full_path.parent() {
-                        fs::create_dir_all(parent).ok();
-                    }
-                    File::create(&full_path).unwrap().write_all(&content).unwrap();
-                }
-            }
-        }
-    }
-    
+	pool.install(|| {
+		extra_starts.into_iter().par_bridge().for_each(|start| {
+			if let Some(path_len_pos) = buffer[start..].iter().position(|&b| b == b'\n') {
+				let path_str = String::from_utf8_lossy(&buffer[start..start + path_len_pos]).to_string();
+				let mut full_path = path_dir.clone();
+				if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(path_str) {
+					full_path = path_dir.join(String::from_utf8_lossy(&decoded).to_string());
+				}
+
+				let content_start = start + path_len_pos + 1;
+				if let Some(len_end) = buffer[content_start..].iter().position(|&b| b == b'\n') {
+					let len_str = String::from_utf8_lossy(&buffer[content_start..content_start + len_end]);
+					if let Ok(payload_len) = len_str.trim().parse::<usize>() {
+						let bin_start = content_start + len_end + 1;
+						let compressed = &buffer[bin_start..bin_start + payload_len];
+						let content = decompress(compressed);
+						if let Some(parent) = full_path.parent() {
+							fs::create_dir_all(parent).ok();
+						}
+						File::create(&full_path).unwrap().write_all(&content).unwrap();
+					}
+				}
+			}
+		});
+    });
+	
     let mut child = Command::new(&path2)
         .current_dir(original_exe_dir)
         .spawn()
@@ -147,6 +157,7 @@ fn main() {
 		
 	let _ = child.wait(); 
 	delete_all_files_in_folder(&path_dir);
+	remove_dir_all(&path_dir);
 }
 
 fn decompress(data: &[u8]) -> Vec<u8> {
