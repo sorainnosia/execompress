@@ -16,7 +16,7 @@ struct Args {
     #[arg(short, long)]
     input: PathBuf,
 
-	///	Extra files and directories to pack/unpack together
+	///	Extra path to a directory containing files and directories to pack/unpack together
 	#[arg(short, long)]
     extra: Option<PathBuf>,
 
