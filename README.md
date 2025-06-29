@@ -1,4 +1,16 @@
 # ExeCompress
+```
+Usage: execompress [OPTIONS] --input <INPUT> --output <OUTPUT>
+
+Options:
+  -i, --input <INPUT>    Input executable
+  -e, --extra <EXTRA>    Extra path to a directory containing files and directories to pack/unpack together
+  -o, --output <OUTPUT>  Output compressed executable
+  -l, --level <LEVEL>    Compression level: 1-9 [default: 3]
+      --zstd             Use zstd instead of lzma
+      --gui
+  -h, --help             Print help
+```
 Compress Windows executable file becoming smaller size and able to run. During run the program self unpack and place the file into temporary folder and execute the file as if it is running in the current directory. When program terminates, the temporary file is deleted.
 
 # Compile
