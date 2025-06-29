@@ -20,6 +20,7 @@ execompress --input "C:\folder\input.exe" --output "output.exe" -l 20 --gui --zs
 
 ```
 execompress --input "C:\folder\input.exe" --output "output.exe" -l 9 --gui
+```
 
 # Requirements
 Rust is installed and in Environment Path during execution of execompress.
