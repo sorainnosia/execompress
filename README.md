@@ -12,7 +12,7 @@ Compress Windows executable file becoming smaller size and able to run. During r
 execompress --input "C:\folder\input.exe" --output "output.exe" -l 20 --gui --zstd
 ```
 # Other Example using XzEncoder
-`--gui` means the input.exe is a GUI app, and it suppress the command line console from being shown. Without --zstd, maximum compression level is `0 to 9`.
+`--gui` means the input.exe is a GUI app, and it suppress the command line console from being shown. Without `--zstd`, maximum compression level is `0 to 9`.
 
 ```
 execompress --input "C:\folder\input.exe" --output "output.exe" -l 9 --gui
