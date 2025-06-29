@@ -5,6 +5,7 @@ use std::process::Command;
 use xz2::write::XzEncoder;
 use zstd::stream::Encoder;
 use std::fs::{write, File};
+use walkdir::WalkDir;
 mod icoextractor;
 mod stub;
 use crate::icoextractor::IconExtractor;
@@ -14,6 +15,10 @@ struct Args {
     /// Input executable
     #[arg(short, long)]
     input: PathBuf,
+
+	///	Extra files and directories to pack/unpack together
+	#[arg(short, long)]
+    extra: Option<PathBuf>,
 
     /// Output compressed executable
     #[arg(short, long)]
@@ -82,6 +87,39 @@ fn main() -> std::io::Result<()> {
         encoder.finish()?;
         out
     };
+	
+	let mut extra_files = vec![];
+	
+	
+	if let Some(xtra) = &args.extra {
+		if xtra.is_dir() {
+			for entry in WalkDir::new(xtra.clone())
+				.into_iter()
+				.filter_map(|e| e.ok())
+				.filter(|e| e.file_type().is_file())
+			{
+				let path = entry.path();
+				let rel_path = path.strip_prefix(&xtra).unwrap().to_string_lossy().replace("\\", "/");
+				let data = fs::read(path)?;
+
+				let compressed_data = if args.zstd {
+					let mut out = vec![];
+					let mut encoder = Encoder::new(&mut out, args.level as i32)?;
+					encoder.write_all(&data)?;
+					encoder.finish()?;
+					out
+				} else {
+					let mut out = vec![];
+					let mut encoder = XzEncoder::new(&mut out, args.level);
+					encoder.write_all(&data)?;
+					encoder.finish()?;
+					out
+				};
+
+				extra_files.push((rel_path, compressed_data));
+			}
+		}
+	}
 
     println!("Original size: {}, Compressed: {}", input_data.len(), compressed_data.len());
 
@@ -104,6 +142,16 @@ fn main() -> std::io::Result<()> {
     let payload_len_line = format!("{}\n", compressed_data.len());
     stub.extend_from_slice(payload_len_line.as_bytes()); // Write the length as a single line
     stub.extend_from_slice(&compressed_data);     
+
+	for (filename, compressed_data) in extra_files {
+		let encoded_name = STANDARD.encode(&filename);
+		stub.extend_from_slice(b"\n--EXTRA-FILE--\n");
+		stub.extend_from_slice(encoded_name.as_bytes());
+		stub.extend_from_slice(b"\n");
+		let len_line = format!("{}\n", compressed_data.len());
+		stub.extend_from_slice(len_line.as_bytes());
+		stub.extend_from_slice(&compressed_data);
+	}
 
     fs::write(&args.output, stub)?;
     println!("Compressed executable written to {:?}", args.output);
