@@ -1,0 +1,11 @@
+[package]
+name = "execompress"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+#ico-extract = "0.3"
+clap = { version = "4", features = ["derive"] }
+xz2 = "0.1"
+zstd = "0.13"
+base64 = "0.22"
