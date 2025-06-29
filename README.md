@@ -2,7 +2,7 @@
 Compress Windows executable file becoming smaller size and able to run. During run the program self unpack and place the file into temporary folder and execute the file as if it is running in the current directory. When program terminates, the temporary file is deleted.
 
 # Compile
-1. Compile the main program (src) using `cargo build -r`
+1. Compile the main program using `cargo build -r`
 2. Copy ExeCompress.exe to the same folder with `stub_loader` folder, run the program in the folder
 
 # Notes
