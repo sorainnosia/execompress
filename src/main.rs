@@ -24,7 +24,7 @@ struct Args {
     #[arg(short, long)]
     output: PathBuf,
 
-    /// Compression level: 1-9
+    /// Compression level: 1-9 (default) 1-22 (--zstd)
     #[arg(short, long, default_value = "3")]
     level: u32,
 
@@ -32,7 +32,7 @@ struct Args {
     #[arg(long)]
     zstd: bool,
 
-	/// When input file is GUI app, suppress command line window
+    /// When input file is GUI app, suppress command line window
     #[arg(long)]
     gui: bool,
 }
