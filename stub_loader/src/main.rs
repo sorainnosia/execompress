@@ -1,6 +1,7 @@
 #![cfg_attr(feature = "gui", windows_subsystem = "windows")]
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::fs::File;
+use std::fs::{remove_dir_all};
 use std::io::{BufRead, BufReader, Write, Read};
 use std::path::{PathBuf, Path};
 use std::process::Command;
@@ -10,6 +11,27 @@ use xz2::write::XzEncoder;
 use xz2::read::XzDecoder;
 use close_file::Closable;
 use rand::{distributions::Alphanumeric, Rng};
+use fs_more::directory::{move_directory, DirectoryMoveOptions, DestinationDirectoryRule};
+use fs_more::file::remove_file;
+use std::io;
+use std::fs;
+
+pub fn delete_all_files_in_folder(dir_path: &Path) -> io::Result<()> {
+    for entry in fs::read_dir(dir_path.clone())? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_file() {
+            remove_file(&path).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        } else if path.is_dir() {
+            delete_all_files_in_folder(&path)?;
+            remove_dir_all(&path).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        }
+    }
+	remove_dir_all(&dir_path);
+
+    Ok(())
+}
 
 fn generate_random_string(len: usize) -> String {
     rand::thread_rng()
@@ -27,9 +49,11 @@ fn main() {
 
     let marker_payload = b"--PAYLOAD--\n";
     let marker_filename = b"--XFILENAMEX--\n";
-
+	let marker_extra = b"--EXTRA-FILE--\n";
+	
     let mut payload_start = None;
     let mut filename_start = None;
+	let mut extra_starts = vec![];
 
     for i in 0..buffer.len() {
         if i + marker_payload.len() <= buffer.len() && &buffer[i..i + marker_payload.len()] == marker_payload {
@@ -37,6 +61,9 @@ fn main() {
         }
         if i + marker_filename.len() <= buffer.len() && &buffer[i..i + marker_filename.len()] == marker_filename {
             filename_start = Some(i + marker_filename.len());
+        }
+		if i + marker_extra.len() <= buffer.len() && &buffer[i..i + marker_extra.len()] == marker_extra {
+            extra_starts.push(i + marker_extra.len());
         }
     }
 
@@ -66,70 +93,8 @@ fn main() {
     } else {
         panic!("Payload marker not found");
     };
-    // let exe_path = std::env::current_exe().unwrap();
-    // let file = File::open(&exe_path).unwrap();
-    // let reader = BufReader::new(file);
 
-    // let mut base64_data = String::new();
-    // let mut base64_data2 = String::new();
-    // let mut found = false;
-    // let mut found2 = false;
-    // let mut xfilenamex = String::from("output.exe");
-    // for line in reader.lines().flatten() {
-    //     if found {
-    //         base64_data.push_str(&line);
-
-    //     } else if line.trim() == "--PAYLOAD--" {
-    //         found = true;
-    //     }
-    // }
-    // //reader.close();
-
-    // let file2 = File::open(&exe_path).unwrap();
-    // let reader2 = BufReader::new(file2);
-    // for line in reader2.lines().flatten() {
-    //     if found2 {
-    //         base64_data2.push_str(&line);
-    //         if let Ok(x) = base64::engine::general_purpose::STANDARD.decode(base64_data2.trim()) {
-    //             xfilenamex = String::from_utf8_lossy(&x).to_string();
-    //         }
-    //     } else if line.trim() == "--XFILENAMEX--" {
-    //          found2 = true;
-    //     }
-    // }
-    //reader2.close();
-
-    //println!("App Name : {}", xfilenamex.to_string());
-
-    // if !found {
-    //     eprintln!("Payload not found");
-    //     return;
-    // }
-
-    // let compressed_data = base64::engine::general_purpose::STANDARD
-    //     .decode(base64_data.trim())
-    //     .expect("Failed to decode base64");
-
-    let decompressed = if let Ok(decompressed) = decompress_lzma(&compressed_data) {
-        decompressed
-    } else {
-        decompress_zstd(&compressed_data).expect("Failed to decompress zstd")
-    };
-
-    // let mut temp_exe = NamedTempFile::new().unwrap();
-    // temp_exe.write_all(&decompressed).unwrap();
-    // let path = temp_exe.into_temp_path();
-
-    // let original_exe_dir = env::current_exe()
-    //     .ok()
-    //     .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-    //     .unwrap_or_else(|| ".".into());
-
-    // Command::new(&path)
-    //     .current_dir(original_exe_dir)
-    //     .spawn()
-    //     .expect("Failed to launch extracted EXE");
-
+	let decompressed = decompress(&compressed_data);
     let px = Path::new(&xfilenamex)
         .file_name()       // Gets just the filename (OsStr)
         .unwrap()          // or handle Option
@@ -137,11 +102,9 @@ fn main() {
         .to_string();
     let mut path = env::temp_dir();
     path.push(generate_random_string(10));
+	let mut path_dir = path.clone();
     std::fs::create_dir_all(&path);
     path.push(px.to_string());
-
-    //fs::write_all("a.txt", &path.display().to_string());
-    //File::create("a.txt").unwrap().write_all(&path.display().to_string().as_bytes()).unwrap();
 
     let mut file = File::create(&path).expect("Failed to create temp exe");
     file.write_all(&decompressed).expect("Failed to write payload");
@@ -152,12 +115,47 @@ fn main() {
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
         .unwrap_or_else(|| ".".into());
     file.close();
+	
+    for start in extra_starts {
+        if let Some(path_len_pos) = buffer[start..].iter().position(|&b| b == b'\n') {
+            let path_str = String::from_utf8_lossy(&buffer[start..start + path_len_pos]).to_string();
+			let mut full_path = path_dir.clone();
+			if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(path_str) {
+                full_path = path_dir.join(String::from_utf8_lossy(&decoded).to_string());
+            }
 
-    //File::create("a.txt").unwrap().write_all(&original_exe_dir.display().to_string().as_bytes()).unwrap();
-    Command::new(&path2)
+            let content_start = start + path_len_pos + 1;
+            if let Some(len_end) = buffer[content_start..].iter().position(|&b| b == b'\n') {
+                let len_str = String::from_utf8_lossy(&buffer[content_start..content_start + len_end]);
+                if let Ok(payload_len) = len_str.trim().parse::<usize>() {
+                    let bin_start = content_start + len_end + 1;
+                    let compressed = &buffer[bin_start..bin_start + payload_len];
+                    let content = decompress(compressed);
+                    if let Some(parent) = full_path.parent() {
+                        fs::create_dir_all(parent).ok();
+                    }
+                    File::create(&full_path).unwrap().write_all(&content).unwrap();
+                }
+            }
+        }
+    }
+    
+    let mut child = Command::new(&path2)
         .current_dir(original_exe_dir)
         .spawn()
         .expect("Failed to launch extracted EXE");
+		
+	let _ = child.wait(); 
+	delete_all_files_in_folder(&path_dir);
+}
+
+fn decompress(data: &[u8]) -> Vec<u8> {
+    let decompressed = if let Ok(decompressed) = decompress_lzma(data) {
+        decompressed
+    } else {
+        decompress_zstd(data).expect("Failed to decompress zstd")
+    };
+	return decompressed;
 }
 
 fn decompress_lzma(data: &[u8]) -> Result<Vec<u8>, std::io::Error> {
