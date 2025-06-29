@@ -32,6 +32,7 @@ struct Args {
     #[arg(long)]
     zstd: bool,
 
+	/// When input file is GUI app, suppress command line window
     #[arg(long)]
     gui: bool,
 }
