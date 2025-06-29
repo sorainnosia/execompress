@@ -9,3 +9,4 @@ clap = { version = "4", features = ["derive"] }
 xz2 = "0.1"
 zstd = "0.13"
 base64 = "0.22"
+walkdir = "2.5"
