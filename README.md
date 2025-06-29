@@ -23,12 +23,12 @@ Compress Windows executable file becoming smaller size and able to run. During r
 3. The output file is then generated
 
 # Example using zstd algorithm
-`-l` means compression level, `zstd` supports from compression level of `0 to 22`
+`-l` means compression level, `zstd` supports from compression level of `1 to 22`
 ```
 execompress --input "C:\folder\input.exe" --output "output.exe" -l 20 --gui --zstd
 ```
 # Example using XzEncoder algorithm
-`--gui` means the input.exe is a GUI app, and it suppress the command line console from being shown. Using `XzEncoder` (default), maximum compression level is `0 to 9`.
+`--gui` means the input.exe is a GUI app, and it suppress the command line console from being shown. Using `XzEncoder` (default), maximum compression level is `1 to 9`.
 
 ```
 execompress --input "C:\folder\input.exe" --output "output.exe" -l 9 --gui
