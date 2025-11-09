@@ -1,17 +1,15 @@
 #![cfg_attr(feature = "gui", windows_subsystem = "windows")]
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::fs::File;
-use std::fs::{remove_dir_all};
-use std::io::{BufRead, BufReader, Write, Read};
-use std::path::{PathBuf, Path};
+use std::fs::remove_dir_all;
+use std::io::{Write, Read};
+use std::path::Path;
 use std::process::Command;
 use std::env;
-use tempfile::NamedTempFile;
-use xz2::write::XzEncoder;
 use xz2::read::XzDecoder;
+use brotli::Decompressor;
 use close_file::Closable;
 use rand::{distributions::Alphanumeric, Rng};
-use fs_more::directory::{move_directory, DirectoryMoveOptions, DestinationDirectoryRule};
 use fs_more::file::remove_file;
 use std::io;
 use std::fs;
@@ -49,23 +47,28 @@ fn main() {
     let mut buffer = vec![];
     file.read_to_end(&mut buffer).unwrap();
 
-    let marker_payload = b"--PAYLOAD--\n";
+    let marker_file_content = b"--FILE-CONTENT--\n";
     let marker_filename = b"--XFILENAMEX--\n";
 	let marker_extra = b"--EXTRA-FILE--\n";
-	
-    let mut payload_start = None;
+	let marker_cleanup = b"--CLEANUP--\n";
+
+    let mut file_content_start = None;
     let mut filename_start = None;
 	let mut extra_starts = vec![];
+	let mut cleanup_enabled = false;
 
     for i in 0..buffer.len() {
-        if i + marker_payload.len() <= buffer.len() && &buffer[i..i + marker_payload.len()] == marker_payload {
-            payload_start = Some(i + marker_payload.len());
+        if i + marker_file_content.len() <= buffer.len() && &buffer[i..i + marker_file_content.len()] == marker_file_content {
+            file_content_start = Some(i + marker_file_content.len());
         }
         if i + marker_filename.len() <= buffer.len() && &buffer[i..i + marker_filename.len()] == marker_filename {
             filename_start = Some(i + marker_filename.len());
         }
 		if i + marker_extra.len() <= buffer.len() && &buffer[i..i + marker_extra.len()] == marker_extra {
             extra_starts.push(i + marker_extra.len());
+        }
+		if i + marker_cleanup.len() <= buffer.len() && &buffer[i..i + marker_cleanup.len()] == marker_cleanup {
+            cleanup_enabled = true;
         }
     }
 
@@ -80,20 +83,20 @@ fn main() {
         }
     }
 
-    let compressed_data = if let Some(pstart) = payload_start {
-        if let Some(newline) = buffer[pstart..].iter().position(|&b| b == b'\n') {
-            let len_str = String::from_utf8_lossy(&buffer[pstart..pstart + newline]);
-            if let Ok(payload_len) = len_str.trim().parse::<usize>() {
-                let bin_start = pstart + newline + 1;
-                buffer[bin_start..bin_start + payload_len].to_vec()
+    let compressed_data = if let Some(fc_start) = file_content_start {
+        if let Some(newline) = buffer[fc_start..].iter().position(|&b| b == b'\n') {
+            let len_str = String::from_utf8_lossy(&buffer[fc_start..fc_start + newline]);
+            if let Ok(content_len) = len_str.trim().parse::<usize>() {
+                let bin_start = fc_start + newline + 1;
+                buffer[bin_start..bin_start + content_len].to_vec()
             } else {
-                panic!("Invalid payload length");
+                panic!("Invalid file content length");
             }
         } else {
-            panic!("Could not find payload length newline");
+            panic!("Could not find file content length marker");
         }
     } else {
-        panic!("Payload marker not found");
+        panic!("File content marker not found");
     };
 
 	let decompressed = decompress(&compressed_data);
@@ -154,14 +157,20 @@ fn main() {
         .current_dir(original_exe_dir)
         .spawn()
         .expect("Failed to launch extracted EXE");
-		
-	let _ = child.wait(); 
-	delete_all_files_in_folder(&path_dir);
-	remove_dir_all(&path_dir);
+
+	let _ = child.wait();
+
+	// Only cleanup if --cleanup flag was specified during compression
+	if cleanup_enabled {
+		delete_all_files_in_folder(&path_dir);
+		remove_dir_all(&path_dir);
+	}
 }
 
 fn decompress(data: &[u8]) -> Vec<u8> {
-    let decompressed = if let Ok(decompressed) = decompress_lzma(data) {
+    let decompressed = if let Ok(decompressed) = decompress_brotli(data) {
+        decompressed
+    } else if let Ok(decompressed) = decompress_lzma(data) {
         decompressed
     } else {
         decompress_zstd(data).expect("Failed to decompress zstd")
@@ -178,6 +187,13 @@ fn decompress_lzma(data: &[u8]) -> Result<Vec<u8>, std::io::Error> {
 
 fn decompress_zstd(data: &[u8]) -> Result<Vec<u8>, std::io::Error> {
     let mut decoder = zstd::stream::Decoder::new(data)?;
+    let mut out = vec![];
+    std::io::copy(&mut decoder, &mut out)?;
+    Ok(out)
+}
+
+fn decompress_brotli(data: &[u8]) -> Result<Vec<u8>, std::io::Error> {
+    let mut decoder = Decompressor::new(data, 4096);
     let mut out = vec![];
     std::io::copy(&mut decoder, &mut out)?;
     Ok(out)
