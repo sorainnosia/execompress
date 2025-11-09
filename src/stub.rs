@@ -5,6 +5,13 @@ use std::fs;
 pub fn get_stub_exe(gui: bool) -> Vec<u8> {
     let stub_dir = PathBuf::from("stub_loader");
 
+    // Clean previous build to force rebuild with new version info
+    // This ensures version info changes are always picked up
+    let _ = Command::new("cargo")
+        .args(&["clean"])
+        .current_dir(&stub_dir)
+        .output();
+
     // Set build arguments
     let mut args = vec!["build", "--release"];
     if gui {

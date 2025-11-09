@@ -8,6 +8,7 @@ edition = "2021"
 clap = { version = "4", features = ["derive"] }
 xz2 = "0.1"
 zstd = "0.13"
+brotli = "7.0"
 base64 = "0.22"
 walkdir = "2.5"
 rayon = "1.10"
